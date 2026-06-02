@@ -37,8 +37,10 @@ class TimmModel(torch.nn.Module):
         assert set(return_layers).issubset(model.feature_info.module_name()), \
             f'return_layers should be a subset of {model.feature_info.module_name()}'
 
-        # self.model = model
-        self.model = IntermediateLayerGetter(model, return_layers)
+        # Map feature_info names (e.g. timm hgnetv2 'stages.1') to FeatureListNet
+        # child names ('stages_1') so IntermediateLayerGetter (direct-child only) works.
+        new_return_layers = [m_name.replace(".", "_") for m_name in return_layers]
+        self.model = IntermediateLayerGetter(model, return_layers=new_return_layers)
 
         return_idx = [model.feature_info.module_name().index(name) for name in return_layers]
         self.strides = [model.feature_info.reduction()[i] for i in return_idx]
