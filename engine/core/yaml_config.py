@@ -59,14 +59,14 @@ class YAMLConfig(BaseConfig):
 
     @property
     def lr_scheduler(self, ) -> optim.lr_scheduler.LRScheduler:
-        if self._lr_scheduler is None and 'lr_scheduler' in self.yaml_cfg:
+        if self._lr_scheduler is None and self.yaml_cfg.get('lr_scheduler') is not None:
             self._lr_scheduler = create('lr_scheduler', self.global_cfg, optimizer=self.optimizer)
             print(f'Initial lr: {self._lr_scheduler.get_last_lr()}')
         return super().lr_scheduler
 
     @property
     def lr_warmup_scheduler(self, ) -> optim.lr_scheduler.LRScheduler:
-        if self._lr_warmup_scheduler is None and 'lr_warmup_scheduler' in self.yaml_cfg :
+        if self._lr_warmup_scheduler is None and self.yaml_cfg.get('lr_warmup_scheduler') is not None:
             self._lr_warmup_scheduler = create('lr_warmup_scheduler', self.global_cfg, lr_scheduler=self.lr_scheduler)
         return super().lr_warmup_scheduler
 
