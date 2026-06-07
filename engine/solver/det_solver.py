@@ -80,6 +80,21 @@ class DetSolver(BaseSolver):
                 print(f'best_stat: {best_stat}')
 
         best_stat_print = best_stat.copy()
+        # Config-driven early stopping. Values can be injected from YAML or CLI
+        # `-u early_stop=True early_stop_patience=...`.
+        early_stop_cfg = getattr(self.cfg, 'yaml_cfg', {}) or {}
+        early_stop_enabled = bool(early_stop_cfg.get('early_stop', False))
+        early_stop_patience = int(early_stop_cfg.get('early_stop_patience', 10))
+        early_stop_min_delta = float(early_stop_cfg.get('early_stop_min_delta', 0.0))
+        early_stop_start_epoch = int(early_stop_cfg.get('early_stop_start_epoch', 0))
+        early_stop_wait = 0
+        early_stop_best = top1
+        if early_stop_enabled:
+            print(
+                f'## EarlyStopping ON: patience={early_stop_patience}, '
+                f'min_delta={early_stop_min_delta}, start_epoch={early_stop_start_epoch} '
+                f'(metric = val mAP) ##'
+            )
         start_time = time.time()
         start_epoch = self.last_epoch + 1
         for epoch in range(start_epoch, args.epoches):
@@ -179,6 +194,19 @@ class DetSolver(BaseSolver):
                     self.load_resume_state(str(self.output_dir / 'best_stg1.pth'))
                     print(f'Refresh EMA at epoch {epoch} with decay {self.ema.decay}')
 
+            early_stop_should_stop = False
+            if early_stop_enabled and epoch >= early_stop_start_epoch:
+                if top1 > early_stop_best + early_stop_min_delta:
+                    early_stop_best = top1
+                    early_stop_wait = 0
+                else:
+                    early_stop_wait += 1
+                    print(
+                        f'[EarlyStop] no-improve {early_stop_wait}/{early_stop_patience} '
+                        f'(best mAP={early_stop_best:.4f}, cur best={top1:.4f})'
+                    )
+                    if early_stop_wait >= early_stop_patience:
+                        early_stop_should_stop = True
 
             log_stats = {
                 **{f'train_{k}': v for k, v in train_stats.items()},
@@ -201,6 +229,13 @@ class DetSolver(BaseSolver):
                         for name in filenames:
                             torch.save(coco_evaluator.coco_eval["bbox"].eval,
                                     self.output_dir / "eval" / name)
+
+            if early_stop_should_stop:
+                print(
+                    f'[EarlyStop] stopping at epoch {epoch}: no val(mAP) improvement '
+                    f'for {early_stop_patience} epochs (best mAP={early_stop_best:.4f})'
+                )
+                break
 
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
