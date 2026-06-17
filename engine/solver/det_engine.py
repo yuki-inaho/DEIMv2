@@ -9,6 +9,7 @@ Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 
 import sys
 import math
+from contextlib import nullcontext
 from typing import Iterable
 
 import torch
@@ -38,6 +39,8 @@ def train_one_epoch(self_lr_scheduler, lr_scheduler, model: torch.nn.Module, cri
     lr_warmup_scheduler :Warmup = kwargs.get('lr_warmup_scheduler', None)
 
     cur_iters = epoch * len(data_loader)
+    use_lesam = hasattr(optimizer, 'first_step') and hasattr(optimizer, 'second_step')
+    autocast_device = device.type if isinstance(device, torch.device) else str(device).split(':', maxsplit=1)[0]
 
     for i, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         samples = samples.to(device)
@@ -45,8 +48,8 @@ def train_one_epoch(self_lr_scheduler, lr_scheduler, model: torch.nn.Module, cri
         global_step = epoch * len(data_loader) + i
         metas = dict(epoch=epoch, step=i, global_step=global_step, epoch_step=len(data_loader))
 
-        if scaler is not None:
-            with torch.autocast(device_type=str(device), cache_enabled=True):
+        if scaler is not None and not use_lesam:
+            with torch.autocast(device_type=autocast_device, cache_enabled=True):
                 outputs = model(samples, targets=targets)
 
             if torch.isnan(outputs['pred_boxes']).any() or torch.isinf(outputs['pred_boxes']).any():
@@ -76,7 +79,13 @@ def train_one_epoch(self_lr_scheduler, lr_scheduler, model: torch.nn.Module, cri
             optimizer.zero_grad()
 
         else:
-            outputs = model(samples, targets=targets)
+            autocast_ctx = (
+                torch.autocast(device_type=autocast_device, cache_enabled=True)
+                if scaler is not None
+                else nullcontext()
+            )
+            with autocast_ctx:
+                outputs = model(samples, targets=targets)
             loss_dict = criterion(outputs, targets, **metas)
 
             loss : torch.Tensor = sum(loss_dict.values())
@@ -86,7 +95,26 @@ def train_one_epoch(self_lr_scheduler, lr_scheduler, model: torch.nn.Module, cri
             if max_norm > 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
 
-            optimizer.step()
+            if use_lesam:
+                optimizer.first_step(zero_grad=True)
+
+                autocast_ctx = (
+                    torch.autocast(device_type=autocast_device, cache_enabled=True)
+                    if scaler is not None
+                    else nullcontext()
+                )
+                with autocast_ctx:
+                    outputs_second = model(samples, targets=targets)
+                loss_dict_second = criterion(outputs_second, targets, **metas)
+                loss_second: torch.Tensor = sum(loss_dict_second.values())
+                loss_second.backward()
+
+                if max_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+
+                optimizer.second_step(zero_grad=True)
+            else:
+                optimizer.step()
 
         # ema
         if ema is not None:

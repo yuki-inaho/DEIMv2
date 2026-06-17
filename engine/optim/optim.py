@@ -5,6 +5,7 @@ Copyright(c) 2023 lyuwenyu. All Rights Reserved.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Iterable
 from typing import Any
 
@@ -21,6 +22,7 @@ __all__ = [
     'AdamW',
     'SGD',
     'Adam',
+    'LESAM',
     'AutoMuonWithAuxAdam',
     'AdamWScheduleFreeOptimizer',
     'MultiStepLR',
@@ -49,6 +51,119 @@ def _as_param_list(params: Iterable[Tensor] | Iterable[dict[str, Any]]) -> list[
 SGD = register()(optim.SGD)
 Adam = register()(optim.Adam)
 AdamW = register()(optim.AdamW)
+
+
+@register()
+class LESAM(Optimizer):
+    """Loss-Equated SAM wrapper for DEIMv2 training."""
+
+    def __init__(
+        self,
+        params: Iterable[Tensor] | Iterable[dict[str, Any]],
+        base_optimizer: str = 'AdamW',
+        sigma: float = 0.05,
+        adaptive: bool = False,
+        grad_eps: float = 1e-12,
+        **kwargs,
+    ) -> None:
+        if sigma < 0.0:
+            raise ValueError(f'Invalid sigma, should be non-negative: {sigma}')
+
+        defaults = dict(sigma=sigma, adaptive=adaptive, grad_eps=grad_eps, **kwargs)
+        super().__init__(params, defaults)
+
+        base_optimizer_cls = self._resolve_base_optimizer(base_optimizer)
+        base_kwargs = self._filter_base_optimizer_kwargs(base_optimizer_cls, kwargs)
+        self.base_optimizer = base_optimizer_cls(self.param_groups, **base_kwargs)
+        self.param_groups = self.base_optimizer.param_groups
+        self.state = self.base_optimizer.state
+        self.defaults.update(self.base_optimizer.defaults)
+
+    @staticmethod
+    def _resolve_base_optimizer(base_optimizer: str | type[Optimizer]) -> type[Optimizer]:
+        if isinstance(base_optimizer, str):
+            if not hasattr(optim, base_optimizer):
+                raise ValueError(f'Unknown torch optimizer for LESAM: {base_optimizer}')
+            optimizer_cls = getattr(optim, base_optimizer)
+        else:
+            optimizer_cls = base_optimizer
+
+        if not issubclass(optimizer_cls, Optimizer):
+            raise TypeError(f'LESAM base_optimizer must be a torch Optimizer, got {optimizer_cls}')
+        return optimizer_cls
+
+    @staticmethod
+    def _filter_base_optimizer_kwargs(
+        base_optimizer_cls: type[Optimizer],
+        kwargs: dict[str, Any],
+    ) -> dict[str, Any]:
+        signature = inspect.signature(base_optimizer_cls.__init__)
+        if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
+            return kwargs
+
+        allowed = set(signature.parameters) - {'self', 'params'}
+        return {key: value for key, value in kwargs.items() if key in allowed}
+
+    @torch.no_grad()
+    def first_step(self, zero_grad: bool = False) -> None:
+        grad_norm = self._grad_norm()
+        grad_norm_sq = grad_norm.pow(2).clamp_min(self.param_groups[0]['grad_eps'])
+
+        for group in self.param_groups:
+            scale = group['sigma'] / grad_norm_sq
+            for param in group['params']:
+                if param.grad is None:
+                    continue
+                self.state[param]['old_p'] = param.detach().clone()
+                preconditioner = torch.pow(param, 2) if group['adaptive'] else 1.0
+                param.add_(preconditioner * param.grad * scale.to(param))
+
+        if zero_grad:
+            self.zero_grad()
+
+    @torch.no_grad()
+    def second_step(self, zero_grad: bool = False) -> None:
+        for group in self.param_groups:
+            for param in group['params']:
+                old_p = self.state[param].pop('old_p', None)
+                if old_p is not None:
+                    param.copy_(old_p)
+                elif param.grad is not None:
+                    raise RuntimeError('LESAM.second_step() called before first_step()')
+
+        self.base_optimizer.step()
+
+        if zero_grad:
+            self.zero_grad()
+
+    @torch.no_grad()
+    def step(self, closure=None):  # type: ignore[override]
+        if closure is None:
+            raise RuntimeError('LESAM requires a closure or explicit first_step()/second_step() calls')
+
+        closure = torch.enable_grad()(closure)
+        loss = closure()
+        self.first_step(zero_grad=True)
+        closure()
+        self.second_step(zero_grad=True)
+        return loss
+
+    def _grad_norm(self) -> Tensor:
+        shared_device = self.param_groups[0]['params'][0].device
+        norms = [
+            ((torch.abs(param) if group['adaptive'] else 1.0) * param.grad).norm(p=2).to(shared_device)
+            for group in self.param_groups
+            for param in group['params']
+            if param.grad is not None
+        ]
+        if not norms:
+            return torch.zeros((), device=shared_device)
+        return torch.norm(torch.stack(norms), p=2)
+
+    def load_state_dict(self, state_dict):
+        super().load_state_dict(state_dict)
+        self.base_optimizer.state = self.state
+        self.base_optimizer.param_groups = self.param_groups
 
 
 @register()
