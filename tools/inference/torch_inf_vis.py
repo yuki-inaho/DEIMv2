@@ -7,12 +7,9 @@ Copyright (c) 2024 The D-FINE Authors. All Rights Reserved.
 """
 
 import os
-import random
 import sys
 
-import cv2  # Added for video processing
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
 import torch.nn as nn
 import torchvision.transforms as T
