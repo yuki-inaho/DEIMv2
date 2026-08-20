@@ -479,7 +479,10 @@ DEIMCriterion:
    after training completes.  It chooses the stage-2 best checkpoint when the
    no-augmentation stage produced one and otherwise chooses the stage-1 best
    checkpoint.  The commands use the project environment kept outside the
-   repository on the Desktop.
+   repository on the Desktop.  This local `HGNetv2 B2` configuration follows
+   the DEIMv2 training framework, but is not the paper's canonical DINOv3 M
+   variant; compare it using its own tomato validation metrics rather than the
+   paper's COCO figures.
    ```shell
    export UV_PROJECT_ENVIRONMENT=/home/kasm-user/Desktop/DEIM_sandbox/.venv
    RUN=outputs/deimv2_hgnetv2_m_fruitbbox_muon_full_20260820
