@@ -481,6 +481,9 @@ DEIMCriterion:
    python tools/deployment/export_onnx.py --check --simplify \
      -c ../configs/deimv2/deimv2_hgnetv2_m_coco_tomato_muon.yml \
      -r outputs/deimv2_hgnetv2_m_fruitbbox_muon_full_20260820/best_stg2.pth
+
+   python tools/deployment/convert_openvino.py \
+     --onnx outputs/.../best_stg2.onnx --output outputs/.../best_stg2.xml --fp16
    ```
 
 3. Export [tensorrt](https://docs.nvidia.com/deeplearning/tensorrt/install-guide/index.html)
