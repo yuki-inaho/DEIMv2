@@ -1,7 +1,7 @@
-"""
-Copied from RT-DETR (https://github.com/lyuwenyu/RT-DETR)
-Copyright(c) 2023 lyuwenyu. All Rights Reserved.
-"""
+"""Compatibility entry point for OpenVINO result visualization."""
+
+from backend_vis import main
 
 
-# please reference: https://github.com/guojin-yan/RT-DETR-OpenVINO
+if __name__ == "__main__":
+    main()

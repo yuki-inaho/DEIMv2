@@ -53,10 +53,12 @@ def main(args, ):
             outputs = self.postprocessor(outputs, orig_target_sizes)
             return outputs
 
-    model = Model()
+    model = Model().eval()
 
     img_size = cfg.yaml_cfg["eval_spatial_size"]
-    data = torch.rand(32, 3, *img_size)
+    # Export only the batch shape contract. A 32-image dummy batch wastes GPU
+    # memory and does not add coverage because the batch axis is dynamic.
+    data = torch.rand(1, 3, *img_size)
     size = torch.tensor([img_size])
     _ = model(data, size)
 
