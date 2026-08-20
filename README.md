@@ -501,6 +501,11 @@ DEIMCriterion:
      --onnx "$ONNX" --output "${ONNX%.onnx}_fp16.xml" --fp16
    ```
 
+   `tools/deployment/finalize_tomato_run.sh` runs the same final export,
+   conversion, visualization, and SHA-256 recording sequence only after the
+   training log contains its normal `Training time` marker. It exits instead of
+   publishing artifacts from an interrupted run.
+
 3. Export [tensorrt](https://docs.nvidia.com/deeplearning/tensorrt/install-guide/index.html)
     ```shell
     trtexec --onnx="model.onnx" --saveEngine="model.engine" --fp16
