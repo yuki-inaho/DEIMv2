@@ -43,6 +43,7 @@ cd "$ROOT"
         --model "$ONNX" --input "$SAMPLE" --output "$RUN/onnxruntime.jpg"
     uv run --no-sync python tools/inference/backend_vis.py --backend openvino --device CPU \
         --model "$IR" --input "$SAMPLE" --output "$RUN/openvino.jpg"
+    uv run --no-sync python tools/deployment/summarize_tomato_run.py --run "$RUN"
     sha256sum "$BEST" "$ONNX" "$IR" "${IR%.xml}.bin" "$IR_FP16" "${IR_FP16%.xml}.bin" \
         | tee "$RUN/artifacts.sha256"
 } 2>&1 | tee "$FINAL_LOG"
