@@ -475,15 +475,27 @@ DEIMCriterion:
     python tools/deployment/export_onnx.py --check -c configs/deimv2/deimv2_dinov3_${model}_coco.yml -r model.pth
     ```
 
-   For the single-class tomato/fruit configuration, export the EMA checkpoint
-   after training completes:
+   For the single-class tomato configuration, run the following from `DEIM/`
+   after training completes.  It chooses the stage-2 best checkpoint when the
+   no-augmentation stage produced one and otherwise chooses the stage-1 best
+   checkpoint.  The commands use the project environment kept outside the
+   repository on the Desktop.
    ```shell
-   python tools/deployment/export_onnx.py --check --simplify \
-     -c ../configs/deimv2/deimv2_hgnetv2_m_coco_tomato_muon.yml \
-     -r outputs/deimv2_hgnetv2_m_fruitbbox_muon_full_20260820/best_stg2.pth
+   export UV_PROJECT_ENVIRONMENT=/home/kasm-user/Desktop/DEIM_sandbox/.venv
+   RUN=outputs/deimv2_hgnetv2_m_fruitbbox_muon_full_20260820
+   BEST="$RUN/best_stg2.pth"; [ -f "$BEST" ] || BEST="$RUN/best_stg1.pth"
 
-   python tools/deployment/convert_openvino.py \
-     --onnx outputs/.../best_stg2.onnx --output outputs/.../best_stg2.xml --fp16
+   uv run --no-sync python tools/deployment/export_onnx.py --check \
+     -c ../configs/deimv2/deimv2_hgnetv2_m_coco_tomato_muon.yml \
+     -r "$BEST"
+
+   ONNX="${BEST%.pth}.onnx"
+   # FP32 is the verification/deployment baseline.
+   uv run --no-sync python tools/deployment/convert_openvino.py \
+     --onnx "$ONNX" --output "${ONNX%.onnx}.xml"
+   # FP16 is an optional smaller IR; validate its accuracy on the target set.
+   uv run --no-sync python tools/deployment/convert_openvino.py \
+     --onnx "$ONNX" --output "${ONNX%.onnx}_fp16.xml" --fp16
    ```
 
 3. Export [tensorrt](https://docs.nvidia.com/deeplearning/tensorrt/install-guide/index.html)
@@ -529,19 +541,23 @@ DEIMCriterion:
 3. Runtime-selectable result visualization (PyTorch / ONNX Runtime / OpenVINO)
 
     The three backends use identical resize and original-size contracts and
-    write both the visualized image and a JSON detection summary.
+    write both the visualized image and a JSON detection summary.  They never
+    fall back to another backend: select one explicitly.  Continuing the
+    tomato example above, use a real validation image as follows.
     ```shell
+    INPUT=/workspace/data/tomato_fruits_bbox/fruits_detection_data_Jun23-2025/images_rgb/20240626_13-31-01_2024-06-26_13-40-32_rgb.jpg
+
     # PyTorch checkpoint
-    python tools/inference/backend_vis.py --backend torch --device cuda \
+    uv run --no-sync python tools/inference/backend_vis.py --backend torch --device cuda \
       --config ../configs/deimv2/deimv2_hgnetv2_m_coco_tomato_muon.yml \
-      --model outputs/.../best_stg2.pth --input image.jpg --output torch.jpg
+      --model "$BEST" --input "$INPUT" --output "$RUN/torch.jpg"
 
     # Exported ONNX model (or OpenVINO XML after conversion)
-    python tools/inference/backend_vis.py --backend onnxruntime --device cuda \
-      --model outputs/.../best_stg2.onnx --input image.jpg --output ort.jpg
-    python tools/inference/backend_vis.py --backend openvino --device CPU \
-      --model outputs/.../best_stg2.xml --input image.jpg --output openvino.jpg
-    ```
+    uv run --no-sync python tools/inference/backend_vis.py --backend onnxruntime --device cuda \
+      --model "$ONNX" --input "$INPUT" --output "$RUN/onnxruntime.jpg"
+    uv run --no-sync python tools/inference/backend_vis.py --backend openvino --device CPU \
+      --model "${ONNX%.onnx}.xml" --input "$INPUT" --output "$RUN/openvino.jpg"
+   ```
 </details>
 
 <details>
