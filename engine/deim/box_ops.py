@@ -39,27 +39,6 @@ def box_iou(boxes1: Tensor, boxes2: Tensor):
     return iou, union
 
 
-def aligned_box_iou(boxes1: Tensor, boxes2: Tensor) -> Tensor:
-    """Return IoU for corresponding ``xyxy`` box pairs in linear memory.
-
-    ``torch.diag(box_iou(boxes1, boxes2)[0])`` materializes an ``N x N``
-    matrix even when only matching pairs are needed.  Detection losses use
-    that paired form, so compute it directly.
-    """
-    if boxes1.shape != boxes2.shape:
-        raise ValueError(
-            "aligned_box_iou expects boxes1 and boxes2 with the same shape; "
-            f"got {tuple(boxes1.shape)} and {tuple(boxes2.shape)}"
-        )
-    area1 = box_area(boxes1)
-    area2 = box_area(boxes2)
-    lt = torch.maximum(boxes1[:, :2], boxes2[:, :2])
-    rb = torch.minimum(boxes1[:, 2:], boxes2[:, 2:])
-    wh = (rb - lt).clamp(min=0)
-    inter = wh[:, 0] * wh[:, 1]
-    return inter / (area1 + area2 - inter)
-
-
 def generalized_box_iou(boxes1, boxes2):
     """
     Generalized IoU from https://giou.stanford.edu/

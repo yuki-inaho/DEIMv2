@@ -15,7 +15,8 @@ import torchvision
 import copy
 
 from .dfine_utils import bbox2distance
-from .box_ops import aligned_box_iou, box_cxcywh_to_xyxy, generalized_box_iou
+from .box_ops import box_cxcywh_to_xyxy
+from ..misc.box_ops import elementwise_box_iou, elementwise_generalized_box_iou
 from ..misc.dist_utils import get_world_size, is_dist_available_and_initialized
 from ..core import register
 
@@ -85,8 +86,10 @@ class DEIMCriterion(nn.Module):
         if values is None:
             src_boxes = outputs['pred_boxes'][idx]
             target_boxes = torch.cat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], dim=0)
-            ious, _ = box_iou(box_cxcywh_to_xyxy(src_boxes), box_cxcywh_to_xyxy(target_boxes))
-            ious = torch.diag(ious).detach()
+            ious, _ = elementwise_box_iou(
+                box_cxcywh_to_xyxy(src_boxes), box_cxcywh_to_xyxy(target_boxes)
+            )
+            ious = ious.detach()
         else:
             ious = values
 
@@ -114,8 +117,10 @@ class DEIMCriterion(nn.Module):
         if values is None:
             src_boxes = outputs['pred_boxes'][idx]
             target_boxes = torch.cat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], dim=0)
-            ious, _ = box_iou(box_cxcywh_to_xyxy(src_boxes), box_cxcywh_to_xyxy(target_boxes))
-            ious = torch.diag(ious).detach()
+            ious, _ = elementwise_box_iou(
+                box_cxcywh_to_xyxy(src_boxes), box_cxcywh_to_xyxy(target_boxes)
+            )
+            ious = ious.detach()
         else:
             ious = values
 
@@ -155,8 +160,9 @@ class DEIMCriterion(nn.Module):
         loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction='none')
         losses['loss_bbox'] = loss_bbox.sum() / num_boxes
 
-        loss_giou = 1 - torch.diag(generalized_box_iou(\
-            box_cxcywh_to_xyxy(src_boxes), box_cxcywh_to_xyxy(target_boxes)))
+        loss_giou = 1 - elementwise_generalized_box_iou(
+            box_cxcywh_to_xyxy(src_boxes), box_cxcywh_to_xyxy(target_boxes)
+        )
         loss_giou = loss_giou if boxes_weight is None else loss_giou * boxes_weight
         losses['loss_giou'] = loss_giou.sum() / num_boxes
 
@@ -183,10 +189,9 @@ class DEIMCriterion(nn.Module):
 
             target_corners, weight_right, weight_left = self.fgl_targets_dn if 'is_dn' in outputs else self.fgl_targets
 
-            # FGL uses IoU only as a detached per-match weight. Avoid the
-            # quadratic pairwise matrix created by diag(box_iou(...)).
+            # FGL uses IoU only as a detached per-match weight.
             with torch.no_grad():
-                ious = aligned_box_iou(
+                ious, _ = elementwise_box_iou(
                     box_cxcywh_to_xyxy(outputs['pred_boxes'][idx]),
                     box_cxcywh_to_xyxy(target_boxes),
                 )
@@ -419,11 +424,13 @@ class DEIMCriterion(nn.Module):
         target_boxes = torch.cat([t['boxes'][j] for t, (_, j) in zip(targets, indices)], dim=0)
 
         if self.boxes_weight_format == 'iou':
-            iou, _ = box_iou(box_cxcywh_to_xyxy(src_boxes.detach()), box_cxcywh_to_xyxy(target_boxes))
-            iou = torch.diag(iou)
+            iou, _ = elementwise_box_iou(
+                box_cxcywh_to_xyxy(src_boxes.detach()), box_cxcywh_to_xyxy(target_boxes)
+            )
         elif self.boxes_weight_format == 'giou':
-            iou = torch.diag(generalized_box_iou(\
-                box_cxcywh_to_xyxy(src_boxes.detach()), box_cxcywh_to_xyxy(target_boxes)))
+            iou = elementwise_generalized_box_iou(
+                box_cxcywh_to_xyxy(src_boxes.detach()), box_cxcywh_to_xyxy(target_boxes)
+            )
         else:
             raise AttributeError()
 
