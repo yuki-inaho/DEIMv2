@@ -475,6 +475,14 @@ DEIMCriterion:
     python tools/deployment/export_onnx.py --check -c configs/deimv2/deimv2_dinov3_${model}_coco.yml -r model.pth
     ```
 
+   For the single-class tomato/fruit configuration, export the EMA checkpoint
+   after training completes:
+   ```shell
+   python tools/deployment/export_onnx.py --check --simplify \
+     -c ../configs/deimv2/deimv2_hgnetv2_m_coco_tomato_muon.yml \
+     -r outputs/deimv2_hgnetv2_m_fruitbbox_muon_full_20260820/best_stg2.pth
+   ```
+
 3. Export [tensorrt](https://docs.nvidia.com/deeplearning/tensorrt/install-guide/index.html)
     ```shell
     trtexec --onnx="model.onnx" --saveEngine="model.engine" --fp16
@@ -513,6 +521,23 @@ DEIMCriterion:
     python tools/inference/onnx_inf.py --onnx model.onnx --input image.jpg  # video.mp4
     python tools/inference/trt_inf.py --trt model.engine --input image.jpg
     python tools/inference/torch_inf.py -c configs/deimv2/deimv2_dinov3_${model}_coco.yml -r model.pth --input image.jpg --device cuda:0
+    ```
+
+3. Runtime-selectable result visualization (PyTorch / ONNX Runtime / OpenVINO)
+
+    The three backends use identical resize and original-size contracts and
+    write both the visualized image and a JSON detection summary.
+    ```shell
+    # PyTorch checkpoint
+    python tools/inference/backend_vis.py --backend torch --device cuda \
+      --config ../configs/deimv2/deimv2_hgnetv2_m_coco_tomato_muon.yml \
+      --model outputs/.../best_stg2.pth --input image.jpg --output torch.jpg
+
+    # Exported ONNX model (or OpenVINO XML after conversion)
+    python tools/inference/backend_vis.py --backend onnxruntime --device cuda \
+      --model outputs/.../best_stg2.onnx --input image.jpg --output ort.jpg
+    python tools/inference/backend_vis.py --backend openvino --device CPU \
+      --model outputs/.../best_stg2.xml --input image.jpg --output openvino.jpg
     ```
 </details>
 
