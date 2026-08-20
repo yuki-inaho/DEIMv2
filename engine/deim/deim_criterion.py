@@ -137,7 +137,7 @@ class DEIMCriterion(nn.Module):
 
         pred_score = F.sigmoid(src_logits).detach()
         target_score = target_score.pow(self.gamma)
-        if self.mal_alpha != None:
+        if self.mal_alpha is not None:
             weight = self.mal_alpha * pred_score.pow(self.gamma) * (1 - target) + target
         else:
             weight = pred_score.pow(self.gamma) * (1 - target) + target
