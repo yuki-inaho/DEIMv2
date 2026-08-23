@@ -6,3 +6,5 @@ tensorboard
 scipy
 calflops
 transformers
+jaxtyping>=0.3.0
+beartype>=0.18.0
