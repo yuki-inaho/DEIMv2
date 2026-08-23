@@ -10,10 +10,11 @@ Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 import sys
 import math
 from contextlib import nullcontext
-from typing import Iterable
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import torch
 import torch.amp
+from jaxtyping import Float
 from torch.utils.tensorboard import SummaryWriter
 from torch.cuda.amp.grad_scaler import GradScaler
 
@@ -24,7 +25,7 @@ from ..misc import MetricLogger, SmoothedValue, dist_utils
 
 def train_one_epoch(self_lr_scheduler, lr_scheduler, model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
-                    device: torch.device, epoch: int, max_norm: float = 0, **kwargs):
+                    device: torch.device, epoch: int, max_norm: float = 0, **kwargs) -> Dict[str, float]:
     model.train()
     criterion.train()
     metric_logger = MetricLogger(delimiter="  ")
@@ -32,18 +33,18 @@ def train_one_epoch(self_lr_scheduler, lr_scheduler, model: torch.nn.Module, cri
     header = 'Epoch: [{}]'.format(epoch)
 
     print_freq = kwargs.get('print_freq', 10)
-    writer :SummaryWriter = kwargs.get('writer', None)
+    writer: Optional[SummaryWriter] = kwargs.get('writer', None)
 
-    ema :ModelEMA = kwargs.get('ema', None)
-    scaler :GradScaler = kwargs.get('scaler', None)
-    lr_warmup_scheduler :Warmup = kwargs.get('lr_warmup_scheduler', None)
+    ema: Optional[ModelEMA] = kwargs.get('ema', None)
+    scaler: Optional[GradScaler] = kwargs.get('scaler', None)
+    lr_warmup_scheduler: Optional[Warmup] = kwargs.get('lr_warmup_scheduler', None)
 
     cur_iters = epoch * len(data_loader)
     use_lesam = hasattr(optimizer, 'first_step') and hasattr(optimizer, 'second_step')
     autocast_device = device.type if isinstance(device, torch.device) else str(device).split(':', maxsplit=1)[0]
 
     for i, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
-        samples = samples.to(device)
+        samples: Float[torch.Tensor, "B C H W"] = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
         global_step = epoch * len(data_loader) + i
         metas = dict(epoch=epoch, step=i, global_step=global_step, epoch_step=len(data_loader))
@@ -151,7 +152,7 @@ def train_one_epoch(self_lr_scheduler, lr_scheduler, model: torch.nn.Module, cri
 
 
 @torch.no_grad()
-def evaluate(model: torch.nn.Module, criterion: torch.nn.Module, postprocessor, data_loader, coco_evaluator: CocoEvaluator, device):
+def evaluate(model: torch.nn.Module, criterion: torch.nn.Module, postprocessor, data_loader: Iterable, coco_evaluator: CocoEvaluator, device) -> Tuple[Dict[str, List[float]], CocoEvaluator]:
     model.eval()
     criterion.eval()
     coco_evaluator.cleanup()
@@ -166,7 +167,7 @@ def evaluate(model: torch.nn.Module, criterion: torch.nn.Module, postprocessor, 
     # coco_evaluator.coco_eval[iou_types[0]].params.iouThrs = [0, 0.1, 0.5, 0.75]
 
     for samples, targets in metric_logger.log_every(data_loader, 10, header):
-        samples = samples.to(device)
+        samples: Float[torch.Tensor, "B C H W"] = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
         outputs = model(samples)
